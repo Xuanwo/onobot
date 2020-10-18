@@ -1,0 +1,5 @@
+token = "telegram token"
+admin_group = 12345
+main_group = 12345
+offtopic_group = "https://t.me/offtopic_group"
+meta_group = "https://t.me/meta_group"
