@@ -1,0 +1,19 @@
+[package]
+name = "onobot"
+version = "0.1.0"
+authors = ["Xuanwo <github@xuanwo.io>"]
+edition = "2018"
+
+[dependencies]
+telegram-bot = "0.7.0"
+futures = "0.3.6"
+tokio = { version = "0.2.0", features = ["full"] }
+anyhow = "1.0.33"
+hyper-proxy = "0.8.0"
+hyper = "0.13.8"
+serde = { version = "1.0", features = ["derive"] }
+toml = "0.5.7"
+clap = "3.0.0-beta.2"
+log = "0.4.11"
+env_logger = "0.7.1"
+lru = "0.6.0"
