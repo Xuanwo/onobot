@@ -14,6 +14,7 @@ use telegram_bot::connector::default_connector;
 use telegram_bot::connector::hyper::HyperConnector;
 use telegram_bot::MessageEntityKind::BotCommand;
 use telegram_bot::*;
+use serde::{Serialize, Deserialize};
 
 use super::cache;
 use super::config;
@@ -25,6 +26,23 @@ pub struct API {
 
     cache: RefCell<cache::Cache>,
     admins: HashSet<UserId>,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub enum Callback {
+    Offtopic {
+        id: MessageId,
+    }
+}
+
+impl Callback {
+    fn to_string(&self) -> Result<String> {
+        Ok(serde_json::to_string(self)?)
+    }
+
+    fn from_string(s: &String) -> Result<Self> {
+        Ok(serde_json::from_str(s.as_str())?)
+    }
 }
 
 impl API {
@@ -92,50 +110,35 @@ impl API {
 
         Ok(match &u.kind {
             UpdateKind::Message(m) => {
-                if m.chat.id() == ChatId::from(self.cfg.main_group) {
-                    self.cache.borrow_mut().set(m.from.id, m.date, m.id);
-                }
-
                 self.handle_message(m).await?
+            }
+            UpdateKind::CallbackQuery(c) => {
+                self.handle_callback(c).await?
             }
             _ => {}
         })
     }
 
     pub fn get_original_message_id(&self, m: &Message) -> Option<MessageId> {
-        match &m.chat {
-            MessageChat::Private(u) => {
-                if m.forward.is_none() {
-                    return None;
-                }
-
-                let forward = m.forward.clone().unwrap();
-                return match forward.from {
-                    ForwardFrom::User { user } => {
-                        self.cache.borrow_mut().get(user.id, forward.date).copied()
-                    }
-                    _ => None,
-                };
-            }
-            MessageChat::Group(_) | MessageChat::Supergroup(_) => {
-                if m.chat.id() != ChatId::from(self.cfg.admin_group) {
-                    return None;
-                }
-                if m.reply_to_message.is_none() {
-                    return None;
-                }
-                return match m.reply_to_message.as_ref().unwrap().as_ref() {
-                    MessageOrChannelPost::Message(m) => Some(m.id),
-                    MessageOrChannelPost::ChannelPost(_) => None,
-                };
-            }
-            _ => error!("invalid chat type: {:?}", &m.chat),
+        if m.forward.is_none() {
+            return None;
         }
 
-        None
+        let forward = m.forward.clone().unwrap();
+        match forward.from {
+            ForwardFrom::User { user } => {
+                self.cache.borrow_mut().get(user.id, forward.date).copied()
+            }
+            _ => None,
+        }
     }
 
     pub async fn handle_message(&self, m: &Message) -> Result<()> {
+        // Cache message that send to main group.
+        if m.chat.id() == ChatId::from(self.cfg.main_group) {
+            self.cache.borrow_mut().set(m.from.id, m.date, m.id);
+        }
+
         // Check if user is an admin.
         if !self.admins.contains(&m.from.id) {
             warn!(
@@ -145,30 +148,60 @@ impl API {
             return Ok(());
         }
 
-        let original_message_id = self.get_original_message_id(m);
-        if original_message_id.is_none() {
-            warn!("Message original can't find, ignore this message");
+        if m.forward.is_none() {
+            warn!("Message is not forwarded to bot, ignore this message");
             return Ok(());
         }
 
-        self.send_ot_alert(original_message_id.unwrap(), m).await?;
-
-        info!("管理员 @{} ({}) 出警成功", &m.from.first_name, &m.from.id);
-        self.api
-            .send(SendMessage::new(
-                m.chat.id(),
-                format!("管理员 @{} ({}) 出警成功", m.from.first_name, m.from.id),
-            ))
-            .await?;
+        self.ask_admin(m).await?;
 
         Ok(())
     }
 
-    pub async fn send_ot_alert(&self, original_message_id: MessageId, m: &Message) -> Result<()> {
+    pub async fn handle_callback(&self, c: &CallbackQuery) -> Result<()> {
+        if c.data.is_none() {
+            debug!("callback query {:?} data is empty, ignore", c.id);
+            return Ok(());
+        }
+
+        match Callback::from_string(c.data.as_ref().unwrap())? {
+            Callback::Offtopic { id } => {
+                self.send_ot_alert(id).await?;
+                self.api.send(c.acknowledge()).await?;
+            }
+        }
+
+        Ok(())
+    }
+
+    pub async fn ask_admin(&self, m: &Message) -> Result<()> {
+        let mut msg = m.text_reply(
+            format!("该消息存在什么问题？")
+        );
+
+        let oid = self.get_original_message_id(m);
+        if oid.is_none() {
+            return Err(anyhow!("message id not found"));
+        }
+
+        let mut ikm = InlineKeyboardMarkup::new();
+        ikm.add_row(vec![
+            InlineKeyboardButton::callback("离题", Callback::Offtopic { id: oid.unwrap() }.to_string()?),
+        ]);
+
+        msg.reply_markup(ikm);
+        msg.parse_mode(ParseMode::Markdown);
+
+        self.api.send(msg).await?;
+
+        Ok(())
+    }
+
+    pub async fn send_ot_alert(&self, original_message_id: MessageId) -> Result<()> {
         let mut msg = SendMessage::new(
             ChatId::from(self.cfg.main_group),
             format!(r#"
-            此话题已经偏离本群主题，请移步至相应的讨论群继续话题
+           请勿进行离题讨论，#archlinux-cn 仅用于 archlinux 相关话题讨论，无关主题请前往 OT 群
             "#),
         );
 
