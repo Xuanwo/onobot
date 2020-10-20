@@ -134,26 +134,24 @@ impl API {
     }
 
     pub async fn handle_message(&self, m: &Message) -> Result<()> {
-        // Cache message that send to main group.
-        if m.chat.id() == ChatId::from(self.cfg.main_group) {
-            self.cache.borrow_mut().set(m.from.id, m.date, m.id);
+        match m.chat {
+            MessageChat::Private(_) => {
+                if m.forward.is_none() {
+                    warn!("Message is not forwarded to bot, ignore this message");
+                    return Ok(());
+                }
+
+                self.ask_admin(m).await?;
+            }
+            MessageChat::Group(_) | MessageChat::Supergroup(_) => {
+                // Cache message that send to main group.
+                if m.chat.id() == ChatId::from(self.cfg.main_group) {
+                    self.cache.borrow_mut().set(m.from.id, m.date, m.id);
+                }
+            }
+            _ => {}
         }
 
-        // Check if user is an admin.
-        if !self.admins.contains(&m.from.id) {
-            warn!(
-                "User {}({}) is not an admin",
-                &m.from.first_name, &m.from.id
-            );
-            return Ok(());
-        }
-
-        if m.forward.is_none() {
-            warn!("Message is not forwarded to bot, ignore this message");
-            return Ok(());
-        }
-
-        self.ask_admin(m).await?;
 
         Ok(())
     }
@@ -175,6 +173,15 @@ impl API {
     }
 
     pub async fn ask_admin(&self, m: &Message) -> Result<()> {
+        // Check if user is an admin.
+        if !self.admins.contains(&m.from.id) {
+            warn!(
+                "User {}({}) is not an admin",
+                &m.from.first_name, &m.from.id
+            );
+            return Ok(());
+        }
+
         let mut msg = m.text_reply(
             format!("该消息存在什么问题？")
         );
