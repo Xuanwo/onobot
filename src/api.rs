@@ -79,8 +79,8 @@ impl API {
 
         Ok(Self {
             api,
-            cfg,
-            cache: RefCell::new(cache::Cache::new()),
+            cfg: cfg.clone(),
+            cache: RefCell::new(cache::Cache::new(&cfg.db)?),
             admins: h,
         })
     }
@@ -127,7 +127,15 @@ impl API {
         let forward = m.forward.clone().unwrap();
         match forward.from {
             ForwardFrom::User { user } => {
-                self.cache.borrow_mut().get(user.id, forward.date).copied()
+                let mut sender = user.first_name.clone();
+                if user.last_name.is_some() {
+                    sender.push_str(" ");
+                    sender.push_str(&user.last_name.unwrap());
+                }
+                self.cache.borrow_mut().get(forward.date, sender)
+            }
+            ForwardFrom::ChannelHiddenUser { sender_name } => {
+                self.cache.borrow_mut().get(forward.date, sender_name)
             }
             _ => None,
         }
@@ -146,7 +154,12 @@ impl API {
             MessageChat::Group(_) | MessageChat::Supergroup(_) => {
                 // Cache message that send to main group.
                 if m.chat.id() == ChatId::from(self.cfg.main_group) {
-                    self.cache.borrow_mut().set(m.from.id, m.date, m.id);
+                    let mut sender = m.from.first_name.clone();
+                    if m.from.last_name.is_some() {
+                        sender.push_str(" ");
+                        sender.push_str(&m.from.last_name.clone().unwrap());
+                    }
+                    self.cache.borrow_mut().set(m.date, sender, m.id);
                 }
             }
             _ => {}
