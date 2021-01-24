@@ -5,19 +5,19 @@ authors = ["Xuanwo <github@xuanwo.io>"]
 edition = "2018"
 
 [dependencies]
-telegram-bot = "0.7.0"
-futures = "0.3.6"
+telegram-bot = "0.8.0"
+futures = "0.3.10"
 tokio = { version = "0.2.0", features = ["full"] }
-anyhow = "1.0.33"
+anyhow = "1.0.38"
 hyper-proxy = "0.8.0"
 hyper = "0.13.8"
-serde = { version = "1.0.117", features = ["derive"] }
-toml = "0.5.7"
+serde = { version = "1.0.119", features = ["derive"] }
+toml = "0.5.8"
 clap = "3.0.0-beta.2"
-log = "0.4.11"
-env_logger = "0.7.1"
-lru = "0.6.0"
-rmp-serde = "0.14.4"
-serde_json = "1.0.59"
-sled = "0.34.4"
+log = "0.4.13"
+env_logger = "0.8.2"
+lru = "0.6.3"
+rmp-serde = "0.15.1"
+serde_json = "1.0.61"
+sled = "0.34.6"
 bincode = "1.3.1"
